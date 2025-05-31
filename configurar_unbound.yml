@@ -1,0 +1,187 @@
+---
+- name: Configurar servidor Unbound com zonas locais e forwarding
+  hosts: dns_servers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    unbound_config_file: /etc/unbound/unbound.conf.d/root-auto-trust-anchor-file.conf
+
+  tasks:
+    - name: Atualizar pacotes do sistema
+      ansible.builtin.apt:
+        update_cache: yes
+        upgrade: dist
+      register: upgrade_result
+
+    - name: Mostrar resultado da atualização
+      ansible.builtin.debug:
+        var: upgrade_result.stdout_lines
+
+    - name: Instalar pacotes necessários (unbound e dnsutils)
+      ansible.builtin.apt:
+        name:
+          - unbound
+          - dnsutils
+        state: present
+
+    - name: Configurar Unbound com o arquivo fornecido
+      ansible.builtin.copy:
+        dest: "{{ unbound_config_file }}"
+        content: |
+          server:
+              auto-trust-anchor-file: "/var/lib/unbound/root.key"
+              verbosity: 1
+              statistics-interval: 20
+              extended-statistics: yes
+              num-threads: 2
+              interface: 127.0.0.1
+              interface: ::1
+              interface: 45.71.169.202
+              access-control: 127.0.0.1/8 allow
+              access-control: ::1 allow
+              access-control: 192.168.0.0/16 allow
+              access-control: 172.16.0.0/12 allow
+              access-control: 100.64.0.0/10 allow
+              access-control: 10.0.0.0/8 allow
+              access-control: 45.71.168.0/22 allow
+              access-control: 45.6.124.0/22 allow
+              outgoing-range: 512
+              num-queries-per-thread: 128
+              msg-cache-size: 2m
+              rrset-cache-size: 1m
+              msg-cache-slabs: 4
+              rrset-cache-slabs: 4
+              cache-max-ttl: 1200
+              infra-host-ttl: 60
+              infra-lame-ttl: 60
+              infra-cache-numhosts: 128
+              infra-cache-lame-size: 2k
+              do-ip4: yes
+              do-ip6: yes
+              do-udp: yes
+              do-tcp: yes
+              do-daemonize: yes
+              username: "unbound"
+              directory: "/etc/unbound"
+              logfile: "/var/log/unbound.log"
+              use-syslog: yes
+              pidfile: "/run/unbound.pid"
+              identity: "Unbound-LocalCache"
+              version: "1.0"
+              hide-identity: yes
+              hide-version: yes
+              harden-glue: yes
+              do-not-query-address: 127.0.0.1/8
+              do-not-query-localhost: yes
+              module-config: "iterator"
+              local-zone: "api.mgn.distv.net." static
+              local-zone: "pe3.distv.net." static
+              local-zone: "rec3.distv.net." static
+              local-zone: "stream.mgn.distv.net." static
+              local-zone: "ibl.distv.net." static
+              local-zone: "mgn.distv.net." static
+              local-zone: "localhost." static
+              local-data: "api.mgn.distv.net. IN A 45.235.104.54"
+              local-data: "pe3.distv.net. IN A 45.235.104.54"
+              local-data: "rec3.distv.net. IN A 45.235.104.54"
+              local-data: "stream.mgn.distv.net. IN A 45.235.104.54"
+              local-data: "ibl.distv.net. IN A 45.235.104.54"
+              local-data: "mgn.distv.net. IN A 45.235.104.54"
+              local-data: "localhost. 10800 IN NS localhost."
+              local-data: "localhost. 10800 IN SOA localhost. nobody.invalid. 1 3600 1200 604800 10800"
+              local-data: "localhost. 10800 IN A 127.0.0.1"
+              local-zone: "127.in-addr.arpa." static
+              local-data: "127.in-addr.arpa. 10800 IN NS localhost."
+              local-data: "127.in-addr.arpa. 10800 IN SOA localhost. nobody.invalid. 2 3600 1200 604800 10800"
+              local-data: "1.0.0.127.in-addr.arpa. 10800 IN PTR localhost."
+          remote-control:
+              control-enable: yes
+              control-interface: 127.0.0.1
+              control-port: 8953
+              control-use-cert: "no"
+          forward-zone:
+              name: "."
+              forward-addr: 8.8.8.8
+              forward-addr: 8.8.4.4
+          forward-zone:
+              name: "api.mgn.distv.net"
+              forward-addr: 45.235.104.54
+          forward-zone:
+              name: "pe3.distv.net"
+              forward-addr: 45.235.104.54
+          forward-zone:
+              name: "rec3.distv.net"
+              forward-addr: 45.235.104.54
+          forward-zone:
+              name: "stream.mgn.distv.net"
+              forward-addr: 45.235.104.54
+          forward-zone:
+              name: "ibl.distv.net"
+              forward-addr: 45.235.104.54
+          forward-zone:
+              name: "mgn.distv.net"
+              forward-addr: 45.235.104.54
+      notify: Reiniciar Unbound
+
+  handlers:
+    - name: Reiniciar Unbound
+      ansible.builtin.service:
+        name: unbound
+        state: restarted
+
+    - name: Instalar nftables
+      ansible.builtin.apt:
+        name: nftables
+        state: present
+        update_cache: yes
+
+    - name: Criar configuração do firewall nftables
+      ansible.builtin.copy:
+        dest: /etc/nftables.conf
+        mode: '0644'
+        content: |
+          #!/usr/sbin/nft -f
+
+          flush ruleset
+
+          table inet filter {
+
+              set acesso-dns4 {
+                  flags interval
+                  type ipv4_addr
+                  elements = { 127.0.0.1, 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 100.64.0.0/10, 45.71.168.0/22, 45.6.124.0/22 }
+              }
+              set acesso-dns6 {
+                  flags interval
+                  type ipv6_addr
+                  elements = { ::1, 2001:db8::/32 }
+              }
+
+              chain input {
+                  type filter hook input priority 0;
+
+                  # Permite Acesso DNS na porta 53
+                  ip saddr  @acesso-dns4 udp dport 53 counter accept
+                  ip saddr  @acesso-dns4 tcp dport 53 counter accept
+                  ip6 saddr @acesso-dns6 udp dport 53 counter accept
+                  ip6 saddr @acesso-dns6 tcp dport 53 counter accept
+
+                  # Bloqueia tudo que não for permitido explicitamente
+                  udp dport 53 counter drop
+                  tcp dport 53 counter drop
+              }
+
+              chain forward {
+                  type filter hook forward priority 0;
+              }
+
+              chain output {
+                  type filter hook output priority 0;
+              }
+          }
+    - name: Ativar e iniciar o serviço nftables
+      ansible.builtin.systemd:
+        name: nftables
+        enabled: yes
+        state: restarted

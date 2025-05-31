@@ -1,0 +1,22 @@
+---
+- name: Rodar script remoto no Proxmox/VMware com resposta automática
+  hosts: proxmox_servers
+  become: yes
+  gather_facts: no
+
+  vars:
+    remote_script_path: /root/meu_script.sh
+
+  tasks:
+    - name: Garantir que o script remoto seja executável
+      ansible.builtin.file:
+        path: "{{ remote_script_path }}"
+        mode: '0755'
+
+    - name: Executar o script e responder automaticamente ao prompt y/n
+      ansible.builtin.expect:
+        command: "{{ remote_script_path }}"
+        responses:
+          'Do you want to continue? \[y/n\]': 'y'
+          'Are you sure you want to proceed? \[y/n\]': 'y'
+      timeout: 30

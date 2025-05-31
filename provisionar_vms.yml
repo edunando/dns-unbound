@@ -1,0 +1,32 @@
+- name: Criar VM no Proxmox com Debian 12
+  hosts: localhost
+  gather_facts: no
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Criar VM no Proxmox via API
+      community.general.proxmox:
+        api_user: "{{ proxmox_user }}"
+        api_password: "{{ proxmox_pass }}"
+        api_host: "{{ proxmox_host }}"
+        vmid: "{{ vm_id }}"
+        node: "{{ proxmox_node }}"
+        hostname: "{{ vm_hostname }}"
+        cores: 2
+        memory: 2048
+        disk: 10
+        storage: "{{ proxmox_storage }}"
+        ostemplate: "{{ debian_template }}"
+        netif: '{"net0":"virtio,bridge=vmbr0"}'
+        state: present
+        timeout: 300
+
+    - name: Iniciar VM criada
+      community.general.proxmox:
+        api_user: "{{ proxmox_user }}"
+        api_password: "{{ proxmox_pass }}"
+        api_host: "{{ proxmox_host }}"
+        vmid: "{{ vm_id }}"
+        node: "{{ proxmox_node }}"
+        state: started

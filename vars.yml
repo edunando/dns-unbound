@@ -1,0 +1,8 @@
+proxmox_user: root@pam
+proxmox_pass: senha_do_proxmox
+proxmox_host: 192.168.0.10
+proxmox_node: pve
+proxmox_storage: local-lvm
+vm_id: 105
+vm_hostname: dns-unbound
+debian_template: local:vztmpl/debian-12-standard_12.0-1_amd64.tar.gz
